@@ -6,8 +6,8 @@ All data is stored internally typed.
 # Create a new frame and populating with data in C#
 
 ```csharp
-using Spearing.Utilities.Data.Frames;
-using static Spearing.Utilities.Data.Frames.FrameExtensions;
+using Spearing.Utilities.Data.FramesCore;
+using static Spearing.Utilities.Data.FramesCore.FrameExtensions;
 ```
 
 ```csharp 

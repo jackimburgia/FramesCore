@@ -2,7 +2,8 @@
 
 ```csharp
 using Spearing.Utilities.Data.Frames;
-using static Spearing.Utilities.Data.Frames.FrameExtensions;```
+using static Spearing.Utilities.Data.Frames.FrameExtensions;
+```
 
 ```csharp 
  // Create a new frame

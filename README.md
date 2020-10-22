@@ -79,13 +79,13 @@ using static Spearing.Utilities.Data.Frames.FrameExtensions;```
 ```csharp
 // The As extension method retrieves the data with typing
 // Make sure to use the type that the column was created with
-double averageAge = frame["Ages"].As&lt;double&gt;().Average();
-double totalScore = frame["HighScore"].As&lt;double&gt;().Sum();
+double averageAge = frame["Ages"].As<double>().Average();
+double totalScore = frame["HighScore"].As<double>().Sum();
 
-double[] ages = frame["Ages"].As&lt;double&gt;().ToArray();
+double[] ages = frame["Ages"].As<double>().ToArray();
 
 // Columns inherit from List<T>
-List&lt;double&gt; lowScores = frame["LowScore"].As&lt;double&gt;();
+List<double> lowScores = frame["LowScore"].As<double>();
 ```
 
 
@@ -94,13 +94,13 @@ List&lt;double&gt; lowScores = frame["LowScore"].As&lt;double&gt;();
 # Column level calculations
 
 ```csharp
- frame["ScoreDiff"] = frame["HighScore"].As&lt;double&gt;() - frame["LowScore"].As&lt;double&gt;();
- frame["HighPlus1"] = frame["HighScore"].As&lt;double&gt;() + 1.0;
+ frame["ScoreDiff"] = frame["HighScore"].As<double>() - frame["LowScore"].As<double>();
+ frame["HighPlus1"] = frame["HighScore"].As<double>() + 1.0;
 
  frame["Hours"] = new double[] { 25, 30, 38 };
  double[] hourlyRate = new double[] { 15, 20, 12 };
 
- frame["Pay"] = frame["Hours"].As&lt;double&gt;() * hourlyRate;
+ frame["Pay"] = frame["Hours"].As<double>() * hourlyRate;
 ```
 
 
@@ -129,7 +129,7 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
 
 ```csharp
  // Use the ToFrame method to convert a strongly typed collection to a frame
- List&lt;Employee&gt; employees = new List&lt;Employee&gt;()
+ List<Employee> employees = new List<Employee>()
  {
      new Employee() {Name = "Bob", Age = 40, HighScore = 90.0 },
      new Employee() {Name = "Mary", Age = 28, HighScore = 92.0 },
@@ -156,7 +156,7 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
  // Use Linq predicates to filter data
  DateTime startDate = new DateTime(2016, 9, 1);
  Frame newEmployees = frame
-     .Where(row => row.Get&lt;DateTime&gt;("StartDate") >= startDate)
+     .Where(row => row.Get<DateTime>("StartDate") >= startDate)
      .ToFrame(); 
 
  newEmployees.Print();
@@ -179,11 +179,11 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
 ```csharp
  // Group data and use anonymous types to create a new frame
  Frame empYearSummary = frame
-     .GroupBy(row => row.Get&lt;DateTime&gt;("StartDate").Year)
+     .GroupBy(row => row.Get<DateTime>("StartDate").Year)
      .Select(grp => new
      {
          Year = grp.Key,
-         AverageAge = grp.Average(row => row.Get&lt;double&gt;("Ages")),
+         AverageAge = grp.Average(row => row.Get<double>("Ages")),
          Count = grp.Count()
      })
      .ToFrame();
@@ -208,13 +208,13 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
 
 ```csharp
  // Local file
- Frame employeesLocal = Frame.ReadCSV&lt;string, DateTime, double, double, double, double, double&gt;(@"c:\temp\Employees.csv");
+ Frame employeesLocal = Frame.ReadCSV<string, DateTime, double, double, double, double, double>(@"c:\temp\Employees.csv");
 
  // Web site
- Frame employeesWeb = Frame.ReadCSV&lt;string, DateTime, double, double, double, double, double&gt;(@"http://www.spearing.com/files/Employees.csv");
+ Frame employeesWeb = Frame.ReadCSV<string, DateTime, double, double, double, double, double>(@"http://www.spearing.com/files/Employees.csv");
 
  // Git web site
- Frame employeesGit = Frame.ReadCSV&lt;string, DateTime, double, double, double, double, double&gt;(@"https://raw.githubusercontent.com/jackimburgia/Frames/master/Employees.csv");
+ Frame employeesGit = Frame.ReadCSV<string, DateTime, double, double, double, double, double>(@"https://raw.githubusercontent.com/jackimburgia/Frames/master/Employees.csv");
 ```
 
 
@@ -222,7 +222,7 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
 
 ```csharp
  // Get the top rows of the frame
- IEnumerable&lt;Row&gt; headEmployees = employeesGit.Head();
+ IEnumerable<Row> headEmployees = employeesGit.Head();
 
  headEmployees.Print();
 ```
@@ -235,7 +235,7 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
 
 ```csharp
  // Get the last rows of the frame
- IEnumerable&lt;Row&gt; tailEmployees = employeesGit.Tail();
+ IEnumerable<Row> tailEmployees = employeesGit.Tail();
 
  tailEmployees.Print();
 ```
@@ -270,8 +270,8 @@ authors["Deceased"] = c(true, false, false, false, false);
 
 // Perform an "inner" style join; only display rows where keys match
 Frame joined = books.Join(authors,
-    row => row.Get&lt;string&gt;("Name"),
-    row => row.Get&lt;string&gt;("Surname")
+    row => row.Get<string>("Name"),
+    row => row.Get<string>("Surname")
     );
     
 joined.Print();
@@ -296,8 +296,8 @@ joined.Print();
 // Display all rows from left table and only the values from the right
 //      table where the keys match
 Frame outerJoin = books.OuterJoin(authors,
-    row => row.Get&lt;string&gt;("Name"),
-    row => row.Get&lt;string&gt;("Surname")
+    row => row.Get<string>("Name"),
+    row => row.Get<string>("Surname")
     );
 
 outerJoin.Print();
@@ -334,8 +334,8 @@ parameters["Duration"] = c("1h", "1h", "8h", "1h");
 // Create anonymous types that will act as keys to join on each frame
 var multipleKey = sites
     .Join(parameters,
-    row => new { State = row.Get&lt;string&gt;("State"), Site = row.Get&lt;int&gt;("Site") },
-    row => new { State = row.Get&lt;string&gt;("Region"), Site = row.Get&lt;int&gt;("Monitor") }
+    row => new { State = row.Get<string>("State"), Site = row.Get<int>("Site") },
+    row => new { State = row.Get<string>("Region"), Site = row.Get<int>("Monitor") }
     );
 
 multipleKey.Print();

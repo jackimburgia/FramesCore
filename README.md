@@ -231,7 +231,8 @@ frame.SaveCsv(@"c:\temp\Employees.csv");
    Names               StartDate   Ages   HighScore   LowScore   ScoreDiff   HighPlus1
      Bob   10/1/2016 12:00:00 AM     41          90         78          12          91
     Mary    6/8/2016 12:00:00 AM     28          92         81          11          93
-     Joe    9/2/2017 12:00:00 AM     35          87         85           2          88```
+     Joe    9/2/2017 12:00:00 AM     35          87         85           2          88
+```
 
 ```csharp
  // Get the last rows of the frame

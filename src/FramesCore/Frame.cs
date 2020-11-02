@@ -1,4 +1,4 @@
-﻿using CsvHelper;
+using CsvHelper;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -203,6 +203,28 @@ namespace Spearing.Utilities.Data.FramesCore
             return (Uri.IsWellFormedUriString(path, UriKind.Absolute));
         }
 
+        private static string[] ReadCsv(Stream stream, CsvHelper.Configuration.CsvConfiguration config, Action<CsvReader> doSomething)
+        {
+            using(stream)
+            using (StreamReader reader = new StreamReader(stream))
+            using (var csv = new CsvReader(reader, config))
+            {
+                csv.Read();
+                if (config.HasHeaderRecord)
+                    csv.ReadHeader();
+
+                while (csv.Read())
+                {
+                    doSomething(csv);
+                }
+
+                if (config.HasHeaderRecord)
+                    return csv.Context.HeaderRecord;
+                else
+                    return new string[] { };
+            }
+        }
+
         private static string[] ReadCsv(string path, CsvHelper.Configuration.CsvConfiguration config, Action<CsvReader> doSomething)
         {
             bool isUrl = IsUrl(path);
@@ -212,60 +234,66 @@ namespace Spearing.Utilities.Data.FramesCore
                 var webRequest = WebRequest.Create(path);
                 using (WebResponse response = webRequest.GetResponse())
                 using (Stream content = response.GetResponseStream())
-                using (StreamReader reader = new StreamReader(content))
-                using (var csv = new CsvReader(reader, config))
                 {
-                    csv.Read();
-                    if (config.HasHeaderRecord)
-                        csv.ReadHeader();
-
-                    while (csv.Read())
-                    {
-                        doSomething(csv);
-                    }
-
-                    return csv.Context.HeaderRecord;
+                    return ReadCsv(content, config, doSomething);
                 }
+                //using (StreamReader reader = new StreamReader(content))
+                //using (var csv = new CsvReader(reader, config))
+                //{
+                //    csv.Read();
+                //    if (config.HasHeaderRecord)
+                //        csv.ReadHeader();
+
+                //    while (csv.Read())
+                //    {
+                //        doSomething(csv);
+                //    }
+
+                //    return csv.Context.HeaderRecord;
+                //}
+
             }
             else
             {
-                using (StreamReader reader = new StreamReader(path))
-                using (var csv = new CsvReader(reader, config))
+                using(Stream stream = File.OpenRead(path))
                 {
-
-                    csv.Read();
-                    if (config.HasHeaderRecord)
-                        csv.ReadHeader();
-
-                    while (csv.Read())
-                    {
-                        doSomething(csv);
-                    }
-
-                    if (config.HasHeaderRecord)
-                        return csv.Context.HeaderRecord;
-                    else
-                        return new string[] { };
+                    return ReadCsv(stream, config, doSomething);
                 }
+                //using (StreamReader reader = new StreamReader(path))
+                //using (var csv = new CsvReader(reader, config))
+                //{
+
+                //    csv.Read();
+                //    if (config.HasHeaderRecord)
+                //        csv.ReadHeader();
+
+                //    while (csv.Read())
+                //    {
+                //        doSomething(csv);
+                //    }
+
+                //    if (config.HasHeaderRecord)
+                //        return csv.Context.HeaderRecord;
+                //    else
+                //        return new string[] { };
+                //}
             }
         }
 
-        /// <summary>
-        /// Reads a CSV file from local or the internet
-        /// </summary>
-        /// <typeparam name="A"></typeparam>
-        /// <param name="path"></param>
-        /// <param name="colName1"></param>
-        /// <param name="hasHeader"></param>
-        /// <param name="delimiter"></param>
-        /// <returns></returns>
-        public static Frame ReadCSV<A>(string path, string colName1 = "", bool hasHeader = true, string delimiter = ",")
+        static Func<CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> ReadCSVPart<T>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value)
         {
+            Func<CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> f = (c, a) => readCsv(value, c, a);
+            return f;
+        }
 
+
+        #region 1 Field
+
+        public static Frame GetFrame<T, A>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", bool hasHeader = true, string delimiter = ",")
+        {
             var fld0 = new List<A>();
 
-            var fieldNames = ReadCsv(
-                path,
+            string[] fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -284,17 +312,31 @@ namespace Spearing.Utilities.Data.FramesCore
             return frame;
         }
 
+        public static Frame ReadCSV<A>(Stream stream, string colName1 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A>(ReadCsv, stream, colName1, hasHeader, delimiter);
+
+            return frame;
+        }
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B>(string path, string colName1 = "", string colName2 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A>(string path, string colName1 = "", bool hasHeader = true, string delimiter = ",")
         {
+            var frame = GetFrame<string, A>(ReadCsv, path, colName1, hasHeader, delimiter);
 
+            return frame;
+        }
+        #endregion
+
+        #region 2 fields
+        public static Frame GetFrame<T, A, B>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", bool hasHeader = true, string delimiter = ",")
+        {
             var fld0 = new List<A>();
             var fld1 = new List<B>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -314,18 +356,37 @@ namespace Spearing.Utilities.Data.FramesCore
 
             return frame;
         }
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C>(string path, string colName1 = "", string colName2 = "", string colName3 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B>(string path, string colName1 = "", string colName2 = "", bool hasHeader = true, string delimiter = ",")
         {
+            var frame = GetFrame<string, A, B>(ReadCsv, path, colName1, colName2, hasHeader, delimiter);
 
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B>(Stream stream, string colName1 = "", string colName2 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B>(ReadCsv, stream, colName1, colName2, hasHeader, delimiter);
+
+            return frame;
+        }
+
+
+        #endregion
+
+        #region 3 fields
+        public static Frame GetFrame<T, A, B, C>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", bool hasHeader = true, string delimiter = ",")
+        {
             var fld0 = new List<A>();
             var fld1 = new List<B>();
             var fld2 = new List<C>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -347,10 +408,31 @@ namespace Spearing.Utilities.Data.FramesCore
 
             return frame;
         }
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C>(string path, string colName1 = "", string colName2 = "", string colName3 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C>(ReadCsv, path, colName1, colName2, colName3, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C>(ReadCsv, stream, colName1, colName2, colName3, hasHeader, delimiter);
+
+            return frame;
+        }
+
+
+        #endregion
+
+        #region 4 fields
+        public static Frame GetFrame<T, A, B, C, D>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -358,8 +440,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld2 = new List<C>();
             var fld3 = new List<D>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -383,19 +464,41 @@ namespace Spearing.Utilities.Data.FramesCore
 
             return frame;
         }
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", bool hasHeader = true, string delimiter = ",")
         {
+            var frame = GetFrame<Stream, A, B, C, D>(ReadCsv, stream, colName1, colName2, colName3, colName4, hasHeader, delimiter);
+
+            return frame;
+        }
+        
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D>(ReadCsv, path, colName1, colName2, colName3, colName4, hasHeader, delimiter);
+
+            return frame;
+        }
+
+
+        #endregion
+
+        #region 5 fields
+        public static Frame GetFrame<T, A, B, C, D, E>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", bool hasHeader = true, string delimiter = ",")
+        {
+
             var fld0 = new List<A>();
             var fld1 = new List<B>();
             var fld2 = new List<C>();
             var fld3 = new List<D>();
             var fld4 = new List<E>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -421,10 +524,33 @@ namespace Spearing.Utilities.Data.FramesCore
 
             return frame;
         }
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, hasHeader, delimiter);
+
+            return frame;
+        }
+        
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, hasHeader, delimiter);
+
+            return frame;
+        }
+
+
+        #endregion
+
+        #region 6 fields
+
+        public static Frame GetFrame<T, A, B, C, D, E, F>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -434,8 +560,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld4 = new List<E>();
             var fld5 = new List<F>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -462,14 +587,35 @@ namespace Spearing.Utilities.Data.FramesCore
             frame[columnNames[5]] = new Column(new Column<F>(fld5));
 
             return frame;
-
         }
 
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", bool hasHeader = true, string delimiter = ",")
         {
+            var frame = GetFrame<string, A, B, C, D, E, F>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, hasHeader, delimiter);
+
+            return frame;
+        }
+
+
+        #endregion
+
+        #region 7 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", bool hasHeader = true, string delimiter = ",")
+        {
+
             var fld0 = new List<A>();
             var fld1 = new List<B>();
             var fld2 = new List<C>();
@@ -478,8 +624,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld5 = new List<F>();
             var fld6 = new List<G>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -510,10 +655,30 @@ namespace Spearing.Utilities.Data.FramesCore
             return frame;
         }
 
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+        #region 8 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -525,8 +690,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld6 = new List<G>();
             var fld7 = new List<H>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -562,7 +726,26 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 9 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -575,8 +758,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld7 = new List<H>();
             var fld8 = new List<I>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -611,10 +793,32 @@ namespace Spearing.Utilities.Data.FramesCore
             return frame;
         }
 
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, hasHeader, delimiter);
+
+            return frame;
+        }
+
+
+        #endregion
+
+
+        #region 10 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -628,8 +832,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld8 = new List<I>();
             var fld9 = new List<J>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -669,7 +872,26 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 11 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -684,8 +906,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld9 = new List<J>();
             var fld10 = new List<K>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -724,11 +945,30 @@ namespace Spearing.Utilities.Data.FramesCore
             return frame;
         }
 
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, hasHeader, delimiter);
+
+            return frame;
+        }
 
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 12 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -744,8 +984,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld10 = new List<K>();
             var fld11 = new List<L>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -789,7 +1028,26 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "",  bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 13 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "",string colName13 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -806,8 +1064,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld11 = new List<L>();
             var fld12 = new List<M>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -853,7 +1110,26 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 14 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M, N>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -871,8 +1147,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld12 = new List<M>();
             var fld13 = new List<N>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -920,7 +1195,27 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M, N>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M, N>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        #endregion
+
+
+        #region 15 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -939,8 +1234,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld13 = new List<N>();
             var fld14 = new List<O>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -990,7 +1284,27 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14,  colName15, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 16 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "",string colName16 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -1010,8 +1324,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld14 = new List<O>();
             var fld15 = new List<P>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -1063,7 +1376,26 @@ namespace Spearing.Utilities.Data.FramesCore
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, hasHeader, delimiter);
+
+            return frame;
+        }
+        #endregion
+
+
+        #region 17 fields
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "",string colName17 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -1084,8 +1416,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld15 = new List<P>();
             var fld16 = new List<Q>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -1136,10 +1467,32 @@ namespace Spearing.Utilities.Data.FramesCore
             return frame;
         }
 
+
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, colName17, hasHeader, delimiter);
+
+            return frame;
+        }        
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, colName17, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        #endregion
+
+
+        #region 18 fields
+
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", bool hasHeader = true, string delimiter = ",")
         {
 
             var fld0 = new List<A>();
@@ -1161,8 +1514,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld16 = new List<Q>();
             var fld17 = new List<R>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -1215,13 +1567,33 @@ namespace Spearing.Utilities.Data.FramesCore
             return frame;
         }
 
-
-
         /// <summary>
         /// Reads a CSV file from local or the internet
         /// </summary>
-        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", string colName19 = "", bool hasHeader = true, string delimiter = ",")
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", bool hasHeader = true, string delimiter = ",")
         {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, colName17, colName18, hasHeader, delimiter);
+
+            return frame;
+        }
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, colName17, colName18, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        #endregion
+
+
+        #region 19 fields
+
+        public static Frame GetFrame<T, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>(Func<T, CsvHelper.Configuration.CsvConfiguration, Action<CsvReader>, string[]> readCsv, T value, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", string colName19 = "", bool hasHeader = true, string delimiter = ",")
+        {
+
 
             var fld0 = new List<A>();
             var fld1 = new List<B>();
@@ -1243,8 +1615,7 @@ namespace Spearing.Utilities.Data.FramesCore
             var fld17 = new List<R>();
             var fld18 = new List<S>();
 
-            var fieldNames = ReadCsv(
-                path,
+            var fieldNames = ReadCSVPart(readCsv, value)(
                 new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.CurrentCulture) { HasHeaderRecord = hasHeader, Delimiter = delimiter },
                 csv =>
                 {
@@ -1298,6 +1669,30 @@ namespace Spearing.Utilities.Data.FramesCore
 
             return frame;
         }
+
+
+
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>(string path, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", string colName19 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<string, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>(ReadCsv, path, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, colName17, colName18, colName19, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        /// <summary>
+        /// Reads a CSV file from local or the internet
+        /// </summary>
+        public static Frame ReadCSV<A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>(Stream stream, string colName1 = "", string colName2 = "", string colName3 = "", string colName4 = "", string colName5 = "", string colName6 = "", string colName7 = "", string colName8 = "", string colName9 = "", string colName10 = "", string colName11 = "", string colName12 = "", string colName13 = "", string colName14 = "", string colName15 = "", string colName16 = "", string colName17 = "", string colName18 = "", string colName19 = "", bool hasHeader = true, string delimiter = ",")
+        {
+            var frame = GetFrame<Stream, A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S>(ReadCsv, stream, colName1, colName2, colName3, colName4, colName5, colName6, colName7, colName8, colName9, colName10, colName11, colName12, colName13, colName14, colName15, colName16, colName17, colName18, colName19, hasHeader, delimiter);
+
+            return frame;
+        }
+
+        #endregion
 
 
         #endregion
